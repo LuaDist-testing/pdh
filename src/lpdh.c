@@ -570,7 +570,7 @@ cleanup:
 
 static int lpdh_path_expand(lua_State *L){
   const char *path = lutil_isudatap(L, 1, LPDH_COUNTER)?lpdh_getcounter_at(L,1)->path:luaL_checkstring(L, 1);
-  DWORD flags = luaL_optint(L, 2, 0);
+  DWORD flags = luaL_optinteger(L, 2, 0);
   PDH_STATUS Status;
   PSTR  Paths = NULL;
   DWORD BufferSize = 0;
@@ -635,8 +635,8 @@ static int lpdh_translate_element(lua_State *L){
 
 static lpdh_counter_t *lpdh_getcounter_at (lua_State *L, int i) {
   lpdh_counter_t *counter = (lpdh_counter_t *)lutil_checkudatap (L, i, LPDH_COUNTER);
-  luaL_argcheck (L, counter != NULL, 1, "PDH Counter expected");
-  luaL_argcheck (L, !(counter->flags & FLAG_DESTROYED), 1, "PDH Counter is destroyed");
+  luaL_argcheck (L, counter != NULL, i, "PDH Counter expected");
+  luaL_argcheck (L, !(counter->flags & FLAG_DESTROYED), i, "PDH Counter is destroyed");
   return counter;
 }
 
@@ -687,7 +687,7 @@ static int lpdh_counter_as_##TNAME(lua_State *L){                               
   lpdh_counter_t *counter = lpdh_getcounter_at(L, 1);                                       \
   PDH_FMT_COUNTERVALUE value;                                                               \
   DWORD CounterType;                                                                        \
-  DWORD scale = luaL_optint(L, 2, 0);                                                       \
+  DWORD scale = luaL_optinteger(L, 2, 0);                                                   \
   PDH_STATUS Status = PdhGetFormattedCounterValue(                                          \
     counter->handle, scale | PDH_FMT_##CNAME, &CounterType,                                 \
     &value                                                                                  \
@@ -723,7 +723,7 @@ static int lpdh_counter_as_##TNAME##_array(lua_State *L){                       
   lua_settop(L, 3);                                                                         \
   if(!lua_isnil(L, 3)){                                                                     \
     cbIndex = 3;                                                                            \
-    scale = (DWORD)luaL_optint(L, 2, 0);                                                    \
+    scale = (DWORD)luaL_optinteger(L, 2, 0);                                                \
   }                                                                                         \
   else if(!lua_isnil(L, 2)){                                                                \
     lua_pop(L, 1);                                                                          \
@@ -895,7 +895,7 @@ static int lpdh_query_collect(lua_State *L){
 //}
 
 static int lpdh_sleep(lua_State *L){
-  DWORD n = luaL_checkint(L, 1);
+  DWORD n = luaL_checkinteger(L, 1);
   Sleep(n);
   return 0;
 }
@@ -1153,7 +1153,7 @@ static int lpsapi_process_open(lua_State *L){
     process->handle = GetCurrentProcess();
   }
   else{
-    pid = (DWORD)luaL_checkint(L, 2);
+    pid = (DWORD)luaL_checkinteger(L, 2);
     process->handle = OpenProcess(accessFlags, FALSE, pid);
   }
 

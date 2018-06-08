@@ -1,17 +1,17 @@
 -- This file was automatically generated for the LuaDist project.
 
 package = "pdh"
-version = "0.1.1-1"
+version = "0.1.2-1"
 
 -- LuaDist source
 source = {
-  tag = "0.1.1-1",
+  tag = "0.1.2-1",
   url = "git://github.com/LuaDist-testing/pdh.git"
 }
 -- Original source
 -- source = {
---   url = "https://github.com/moteus/lua-pdh/archive/v0.1.1.zip",
---   dir = "lua-pdh-0.1.1",
+--   url = "https://github.com/moteus/lua-pdh/archive/v0.1.2.zip",
+--   dir = "lua-pdh-0.1.2",
 -- }
 
 description = {
@@ -26,7 +26,7 @@ supported_platforms = {
 }
 
 dependencies = {
-  "lua >= 5.1, < 5.3",
+  "lua >= 5.1, < 5.4",
 }
 
 -- WINXP SP2
