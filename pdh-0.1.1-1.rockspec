@@ -1,17 +1,17 @@
 -- This file was automatically generated for the LuaDist project.
 
 package = "pdh"
-version = "0.1.0-1"
+version = "0.1.1-1"
 
 -- LuaDist source
 source = {
-  tag = "0.1.0-1",
+  tag = "0.1.1-1",
   url = "git://github.com/LuaDist-testing/pdh.git"
 }
 -- Original source
 -- source = {
---   url = "https://github.com/moteus/lua-pdh/archive/v0.1.0.zip",
---   dir = "lua-pdh-0.1.0",
+--   url = "https://github.com/moteus/lua-pdh/archive/v0.1.1.zip",
+--   dir = "lua-pdh-0.1.1",
 -- }
 
 description = {
@@ -29,6 +29,9 @@ dependencies = {
   "lua >= 5.1, < 5.3",
 }
 
+-- WINXP SP2
+local WINVER = "0x0502"
+
 build = {
   type = "builtin",
   copy_directories = {"examples"},
@@ -38,6 +41,7 @@ build = {
         'src/l52util.c', 'src/lpdh.c',
       };
       libraries = {'pdh', 'psapi', 'advapi32'};
+      defines   = {"WINVER=" .. WINVER, "_WIN32_WINNT=" .. WINVER}
     };
     [ "pdh"         ] = "lua/pdh.lua";
     [ "pdh.psapi"   ] = "lua/pdh/psapi.lua";
