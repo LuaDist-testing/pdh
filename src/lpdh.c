@@ -4,9 +4,19 @@
 #include <Pdh.h>
 #include <PdhMsg.h>
 
+#define _LPDH_NAME      "pdh"
+#define _LPDH_VERSION   "0.1.3"
+#define _LPDH_COPYRIGHT "Copyright (C) 2013-2016 Alexey Melnichuk"
+#define _LPDH_LICENSE   "MIT"
+
 #define LPDH_EXPORT __declspec(dllexport)
 
-#define LPDH_STATIC_ASSERT(A) {(int(*)[(A)?1:0])0;}
+#define LPDH_CONCAT_STATIC_ASSERT_IMPL_(x, y) LPDH_CONCAT1_STATIC_ASSERT_IMPL_ (x, y)
+#define LPDH_CONCAT1_STATIC_ASSERT_IMPL_(x, y) x##y
+#define LPDH_STATIC_ASSERT(expr) typedef char LPDH_CONCAT_STATIC_ASSERT_IMPL_(static_assert_failed_at_line_, __LINE__) [(expr) ? 1 : -1]
+
+#define ASSERT_SAME_SIZE(a, b) LPDH_STATIC_ASSERT( sizeof(a) == sizeof(b) )
+#define ASSERT_SAME_OFFSET(a, am, b, bm) LPDH_STATIC_ASSERT( (offsetof(a,am)) == (offsetof(b,bm)) )
 
 static const char *LPDH_QUERY   = "PDH Query";
 static const char *LPDH_COUNTER = "PDH Counter";
@@ -187,6 +197,11 @@ static lpdh_counter_t *lpdh_getcounter_at (lua_State *L, int i);
 
 //{ Error
 
+// to correct work with error type
+LPDH_STATIC_ASSERT(sizeof(PDH_STATUS) <= sizeof(DWORD));
+
+LPDH_STATIC_ASSERT(sizeof(((lpdh_error_t*)0)->status) <= (sizeof(void*)));
+
 static lpdh_error_t *lpdh_geterror_at (lua_State *L, int i) {
   lpdh_error_t *err = (lpdh_error_t *)lutil_checkudatap (L, i, LPDH_ERROR);
   luaL_argcheck (L, err != NULL, 1, "PDH Error expected");
@@ -276,7 +291,6 @@ static int lpdh_error_push_mnemo(lua_State *L, lpdh_error_t *err, const char* de
 
 static void lpdh_error_pushstring(lua_State *L, lpdh_error_t *err){
   void *ptr_status = (void*)err->status;
-  LPDH_STATIC_ASSERT(sizeof(err->status) <= (sizeof(void*)));
   lpdh_error_push_message(L, err, "unknown");
   lua_pushfstring(L, "[%s] %s (0x%p)",
     lpdh_error_mnemo_(err, "UNKNOWN"),
@@ -959,6 +973,23 @@ typedef PROCESS_BASIC_INFORMATION *PPROCESS_BASIC_INFORMATION;
 
 #endif 
 
+typedef struct _PROCESS_BASIC_INFORMATION_DECODE{
+  ULONG_PTR ExitStatus;
+  PPEB PebBaseAddress;
+  ULONG_PTR AffinityMask;
+  ULONG_PTR BasePriority;
+  ULONG_PTR UniqueProcessId;
+  ULONG_PTR InheritedFromUniqueProcessId;
+} PROCESS_BASIC_INFORMATION_DECODE;
+typedef PROCESS_BASIC_INFORMATION_DECODE *PPROCESS_BASIC_INFORMATION_DECODE;
+
+ASSERT_SAME_SIZE(PROCESS_BASIC_INFORMATION_DECODE, PROCESS_BASIC_INFORMATION);
+ASSERT_SAME_OFFSET(PROCESS_BASIC_INFORMATION_DECODE, ExitStatus,                   PROCESS_BASIC_INFORMATION, Reserved1       );
+ASSERT_SAME_OFFSET(PROCESS_BASIC_INFORMATION_DECODE, PebBaseAddress,               PROCESS_BASIC_INFORMATION, PebBaseAddress  );
+ASSERT_SAME_OFFSET(PROCESS_BASIC_INFORMATION_DECODE, AffinityMask,                 PROCESS_BASIC_INFORMATION, Reserved2       );
+ASSERT_SAME_OFFSET(PROCESS_BASIC_INFORMATION_DECODE, UniqueProcessId,              PROCESS_BASIC_INFORMATION, UniqueProcessId );
+ASSERT_SAME_OFFSET(PROCESS_BASIC_INFORMATION_DECODE, InheritedFromUniqueProcessId, PROCESS_BASIC_INFORMATION, Reserved3       );
+
 typedef NTSTATUS (NTAPI *pfnNtQueryInformationProcess)(
   IN  HANDLE ProcessHandle,
   IN  PROCESSINFOCLASS ProcessInformationClass,
@@ -1139,7 +1170,7 @@ static lpsapi_process_t *lpsapi_process_alloc(lua_State *L){
 
 static int lpsapi_process_open(lua_State *L){
   lpsapi_process_t *process = lpsapi_getprocess_at(L, 1, -1);
-  DWORD pid, accessFlags = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
+  DWORD pid, accessFlags = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | SYNCHRONIZE;
   int top = lua_gettop(L);
 
   if(process->flags & FLAG_OPEN){
@@ -1267,11 +1298,12 @@ static int lpsapi_process_base_name(lua_State *L){
 static int lpsapi_process_command_line(lua_State *L){
   lpsapi_process_t *process = lpsapi_getprocess_at(L, 1, 1);
   NTSTATUS Status;
-  DWORD size;
+  SIZE_T size;
   PPEB ppeb;
 
   {
     PROCESS_BASIC_INFORMATION pbi;
+    ULONG size;
     Status = pNtQueryInformationProcess(
       process->handle, ProcessBasicInformation,
       &pbi, sizeof(pbi), &size
@@ -1342,6 +1374,42 @@ static int lpsapi_process_pid(lua_State *L){
   lpsapi_process_t *process = lpsapi_getprocess_at(L, 1, 1);
   lua_pushnumber(L, GetProcessId(process->handle));
   return 1;
+}
+
+static int lpsapi_process_parent_pid(lua_State *L){
+  lpsapi_process_t *process = lpsapi_getprocess_at(L, 1, 1);
+  DWORD size;
+  PROCESS_BASIC_INFORMATION pbi;
+  PPROCESS_BASIC_INFORMATION_DECODE pbid = (PPROCESS_BASIC_INFORMATION_DECODE) &pbi;
+  NTSTATUS Status = pNtQueryInformationProcess(
+    process->handle, ProcessBasicInformation,
+    &pbi, sizeof(pbi), &size
+  );
+  if(Status != ERROR_SUCCESS){
+    return lpdh_error_system(L, Status);
+  }
+  lua_pushnumber(L, pbid->InheritedFromUniqueProcessId);
+  return 1;
+}
+
+static int lpsapi_process_exit_code(lua_State *L){
+  lpsapi_process_t *process = lpsapi_getprocess_at(L, 1, 1);
+  DWORD code;
+  BOOL ret = GetExitCodeProcess(process->handle, &code);
+  if (!ret) {
+    return lpdh_error_system(L, GetLastError());
+  }
+
+  lua_pushinteger(L, code);
+  return 1;
+}
+
+static int lpsapi_process_alive(lua_State *L){
+  lpsapi_process_t *process = lpsapi_getprocess_at(L, 1, 1);
+  DWORD ret = WaitForSingleObject(process->handle, 0);
+  lua_pushboolean(L, (ret == WAIT_TIMEOUT) ? 1 : 0);
+  lua_pushinteger(L, ret);
+  return 2;
 }
 
 //}
@@ -1466,6 +1534,9 @@ static const struct luaL_Reg lpsapi_process_meth[] = {
   {"command_line", lpsapi_process_command_line  },
   {"times",        lpsapi_process_times         },
   {"pid",          lpsapi_process_pid           },
+  {"parent_pid",   lpsapi_process_parent_pid    },
+  {"exit_code",    lpsapi_process_exit_code     },
+  {"alive",        lpsapi_process_alive         },
   {NULL, NULL}
 };
 
@@ -1501,15 +1572,17 @@ LPDH_EXPORT int luaopen_pdh_core(lua_State*L){
 #undef LPDH_PROCEED_CONST_NODE
 #undef LPDH_PROCEED_ERROR_NODE
 
+  lua_pushliteral(L, _LPDH_NAME     ); lua_setfield(L, -2, "_NAME"     );
+  lua_pushliteral(L, _LPDH_VERSION  ); lua_setfield(L, -2, "_VERSION"  );
+  lua_pushliteral(L, _LPDH_COPYRIGHT); lua_setfield(L, -2, "_COPYRIGHT");
+  lua_pushliteral(L, _LPDH_LICENSE  ); lua_setfield(L, -2, "_LICENSE"  );
+
   assert(top+1 == lua_gettop(L));
   if(1 == luaopen_pdh_psapi(L)){
     assert(top+2 == lua_gettop(L));
     lua_setfield(L, -2, "psapi");
   }
   lua_settop(L, top+1);
-  
-  // to correct work with error type
-  LPDH_STATIC_ASSERT(sizeof(PDH_STATUS) <= sizeof(DWORD));
 
   return 1;
 }
